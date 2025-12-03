@@ -1,0 +1,80 @@
+<%#
+IPsec Ping Monitor Status Page
+NOTE: This page is deprecated - Ping Status is now shown in Overview tab
+%>
+
+<%+header%>
+
+<style type="text/css">
+/* Reduce excessive spacing in CBI forms */
+.cbi-value-field br + .cbi-value-description {
+	margin-top: 0;
+}
+.cbi-value-field {
+	padding-top: 0.3em;
+	padding-bottom: 0.3em;
+}
+.cbi-value-description {
+	margin-top: 0.2em;
+}
+</style>
+
+<h2 name="content"><%:Ping Monitor Status%></h2>
+<div class="alert alert-info">
+	<%:This page has been moved to the Overview tab for better integration.%>
+	<a href="<%=url('admin/vpn/ipsec/overview')%>"><%:Go to Overview%></a>
+</div>
+
+<fieldset class="cbi-section">
+	<legend><%:Current Status%></legend>
+
+	<div class="cbi-section-node">
+		<div id="ping-status">
+			<p><%:Loading status...%></p>
+		</div>
+	</div>
+</fieldset>
+
+<fieldset class="cbi-section">
+	<legend><%:Recent Logs%></legend>
+
+	<div class="cbi-section-node">
+		<pre id="ping-logs" style="max-height: 400px; overflow-y: auto; background: #f5f5f5; padding: 10px; font-size: 12px;">
+<%:Loading logs...%>
+		</pre>
+	</div>
+</fieldset>
+
+<script type="text/javascript">
+	function updateStatus() {
+		XHR.get('<%=url("admin/vpn/ipsec/ping_status")%>', null, function(x, data) {
+			var statusDiv = document.getElementById('ping-status');
+
+			if (data.enabled) {
+				var html = '<table class="cbi-section-table">';
+				html += '<tr><td><strong><%:Status%>:</strong></td><td>' + (data.status === 'OK' ? '<span style="color:green;">●</span> <%:Healthy%>' : '<span style="color:red;">●</span> <%:Failed%>') + '</td></tr>';
+				html += '<tr><td><strong><%:Local IP%>:</strong></td><td>' + data.local_ip + '</td></tr>';
+				html += '<tr><td><strong><%:Primary Target%>:</strong></td><td>' + data.primary + '</td></tr>';
+				html += '<tr><td><strong><%:Secondary Target%>:</strong></td><td>' + (data.secondary || '<%:Not configured%>') + '</td></tr>';
+				html += '<tr><td><strong><%:Last Check%>:</strong></td><td>' + data.last_check + '</td></tr>';
+				html += '<tr><td><strong><%:Failure Count%>:</strong></td><td>' + data.failures + ' / ' + data.max_tries + '</td></tr>';
+				html += '<tr><td><strong><%:Next Check%>:</strong></td><td>' + data.next_check + 's</td></tr>';
+				html += '</table>';
+				statusDiv.innerHTML = html;
+			} else {
+				statusDiv.innerHTML = '<p style="color: #888;"><%:Ping monitoring is disabled%></p>';
+			}
+		});
+
+		XHR.get('<%=url("admin/vpn/ipsec/ping_logs")%>', null, function(x, data) {
+			var logsDiv = document.getElementById('ping-logs');
+			logsDiv.textContent = data.logs || '<%:No logs available%>';
+		});
+	}
+
+	// Update every 5 seconds
+	updateStatus();
+	setInterval(updateStatus, 5000);
+</script>
+
+<%+footer%>

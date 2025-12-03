@@ -1,0 +1,212 @@
+<%+header%>
+
+<style type="text/css">
+/* Reduce excessive spacing in CBI forms */
+.cbi-value-field br + .cbi-value-description {
+	margin-top: 0;
+}
+.cbi-value-field {
+	padding-top: 0.3em;
+	padding-bottom: 0.3em;
+}
+.cbi-value-description {
+	margin-top: 0.2em;
+}
+</style>
+
+<script type="text/javascript" src="<%=resource%>/cbi.js"></script>
+<script type="text/javascript">//<![CDATA[
+
+function testConnectivity() {
+	var target = document.getElementById('test-target').value;
+	var count = document.getElementById('test-count').value;
+
+	if (!target) {
+		alert('<%:Please enter a target IP address%>');
+		return;
+	}
+
+	var output = document.getElementById('test-output');
+	output.innerHTML = '<div class="alert alert-info"><%:Testing connectivity, please wait...%></div>';
+
+	XHR.get('<%=url("admin/vpn/ipsec/action_test")%>',
+		{ target: target, count: count },
+		function(x, data) {
+			if (data) {
+				var className = data.success ? 'alert-success' : 'alert-danger';
+				var icon = data.success ? '✓' : '✗';
+				output.innerHTML =
+					'<div class="alert ' + className + '">' +
+					'<strong>' + icon + ' ' + data.message + '</strong>' +
+					'</div>' +
+					'<pre style="background:#f5f5f5;padding:10px;border:1px solid #ddd;overflow:auto;">' +
+					data.output.replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+					'</pre>';
+			}
+		}
+	);
+}
+
+function refreshStatus() {
+	location.reload();
+}
+
+//]]></script>
+
+<h2 name="content"><%:IPsec VPN Status & Tools%></h2>
+
+<%
+local sys = require "luci.sys"
+local uci = require "luci.model.uci".cursor()
+
+-- Try to load helper module
+local helper_loaded, helper = pcall(require, "ipsec.helper")
+if not helper_loaded then
+	helper = nil
+end
+
+-- Initialize status with defaults
+local status = {
+	running = false,
+	connected = false,
+	traffic_in = 0,
+	traffic_out = 0,
+	remote_subnet = "",
+	local_subnet = ""
+}
+
+-- Get status if helper loaded
+if helper then
+	local ok, result = pcall(helper.get_vpn_status)
+	if ok and result then
+		status = result
+	end
+end
+
+-- Get IPsec status output
+local ipsec_status = sys.exec("ipsec status 2>&1") or "No status available"
+local ipsec_traffic = sys.exec("ipsec whack --trafficstatus 2>&1") or ""
+
+-- Get route info safely
+local route_subnet = status.remote_subnet and status.remote_subnet ~= "" and status.remote_subnet or "10.0.0"
+local route_info = sys.exec("ip route | grep " .. route_subnet .. " 2>&1") or "No routes found"
+
+-- Get default test IP
+local default_test_ip = "10.0.0.1"
+if status.remote_subnet and status.remote_subnet ~= "" then
+	local subnet_match = status.remote_subnet:match("^([^/]+)")
+	if subnet_match then
+		default_test_ip = subnet_match:gsub("%.0$", ".11")
+	end
+end
+%>
+
+<fieldset class="cbi-section">
+	<legend><%:Connection Status%></legend>
+
+	<div class="cbi-section-node">
+		<div class="table">
+			<div class="tr">
+				<div class="td left" style="width:30%"><strong><%:Service Status%>:</strong></div>
+				<div class="td left">
+					<% if status.running then %>
+						<span class="label label-success"><%:Running%></span>
+					<% else %>
+						<span class="label label-danger"><%:Not Running%></span>
+					<% end %>
+				</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong><%:Connection Status%>:</strong></div>
+				<div class="td left">
+					<% if status.connected then %>
+						<span class="label label-success"><%:Connected%></span>
+					<% else %>
+						<span class="label label-warning"><%:Not Connected%></span>
+					<% end %>
+				</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong><%:Traffic In%>:</strong></div>
+				<div class="td left">
+					<% if helper then %>
+						<%= helper.format_bytes(status.traffic_in or 0) %>
+					<% else %>
+						<%= status.traffic_in or 0 %> bytes
+					<% end %>
+				</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong><%:Traffic Out%>:</strong></div>
+				<div class="td left">
+					<% if helper then %>
+						<%= helper.format_bytes(status.traffic_out or 0) %>
+					<% else %>
+						<%= status.traffic_out or 0 %> bytes
+					<% end %>
+				</div>
+			</div>
+		</div>
+	</div>
+</fieldset>
+
+<fieldset class="cbi-section">
+	<legend><%:Connection Details%></legend>
+
+	<div class="cbi-section-node">
+		<pre style="background:#f5f5f5;padding:10px;border:1px solid #ddd;overflow:auto;max-height:300px;"><%=ipsec_status:gsub("<", "&lt;"):gsub(">", "&gt;")%></pre>
+	</div>
+</fieldset>
+
+<fieldset class="cbi-section">
+	<legend><%:Route Information%></legend>
+
+	<div class="cbi-section-node">
+		<pre style="background:#f5f5f5;padding:10px;border:1px solid #ddd;overflow:auto;"><%=route_info:gsub("<", "&lt;"):gsub(">", "&gt;")%></pre>
+	</div>
+</fieldset>
+
+<fieldset class="cbi-section">
+	<legend><%:Connectivity Test%></legend>
+
+	<div class="cbi-section-node">
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:Target IP%>:</label>
+			<div class="cbi-value-field">
+				<input type="text" id="test-target" value="<%=default_test_ip%>" style="width:200px;" />
+			</div>
+		</div>
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:Packet Count%>:</label>
+			<div class="cbi-value-field">
+				<select id="test-count">
+					<option value="2">2</option>
+					<option value="4" selected>4</option>
+					<option value="8">8</option>
+					<option value="10">10</option>
+				</select>
+			</div>
+		</div>
+		<div class="cbi-value">
+			<div class="cbi-value-field">
+				<input type="button" class="cbi-button cbi-button-apply" value="<%:Start Test%>" onclick="testConnectivity();" />
+				<input type="button" class="cbi-button cbi-button-reload" value="<%:Refresh Status%>" onclick="refreshStatus();" />
+			</div>
+		</div>
+		<div id="test-output" style="margin-top:15px;"></div>
+	</div>
+</fieldset>
+
+<% if not helper_loaded then %>
+<fieldset class="cbi-section">
+	<legend><%:Warning%></legend>
+	<div class="cbi-section-node">
+		<div class="alert alert-warning">
+			<strong>Warning:</strong> Helper library could not be loaded. Some features may not work correctly.
+			Please ensure the package is properly installed.
+		</div>
+	</div>
+</fieldset>
+<% end %>
+
+<%+footer%>

@@ -1,0 +1,312 @@
+<%+header%>
+
+<style type="text/css">
+/* Reduce excessive spacing in CBI forms */
+.cbi-value-field br + .cbi-value-description {
+	margin-top: 0;
+}
+.cbi-value-field {
+	padding-top: 0.3em;
+	padding-bottom: 0.3em;
+}
+.cbi-value-description {
+	margin-top: 0.2em;
+}
+</style>
+
+<script type="text/javascript" src="<%=resource%>/cbi.js"></script>
+<script type="text/javascript">//<![CDATA[
+
+var statusInterval = null;
+var pingInterval = null;
+
+function checkDependencies() {
+	XHR.get('<%=url("admin/vpn/ipsec/check_deps")%>', null, function(x, data) {
+		var depDiv = document.getElementById('dependency-warning');
+		if (data && !data.success && data.missing && data.missing.length > 0) {
+			document.getElementById('missing-pkg-list').textContent = data.missing.join(', ');
+			document.getElementById('install-cmd').textContent = data.install_cmd;
+			depDiv.style.display = 'block';
+		} else {
+			depDiv.style.display = 'none';
+		}
+	});
+}
+
+function installDependencies() {
+	var btn = document.getElementById('install-btn');
+	btn.disabled = true;
+	btn.value = '<%:Installing...%>';
+	document.getElementById('install-progress').style.display = 'block';
+
+	XHR.get('<%=url("admin/vpn/ipsec/install_deps")%>', null, function(x, data) {
+		document.getElementById('install-progress').style.display = 'none';
+		if (data && data.success) {
+			showMessage('success', '<%:All packages installed successfully. Reloading...%>');
+			setTimeout(function() { location.reload(); }, 2000);
+		} else {
+			btn.disabled = false;
+			btn.value = '<%:Retry Installation%>';
+			var msg = data ? data.message : '<%:Installation failed%>';
+			showMessage('error', msg);
+			if (data && data.logs) {
+				document.getElementById('install-logs').textContent = data.logs;
+				document.getElementById('install-logs-container').style.display = 'block';
+			}
+		}
+	});
+}
+
+function updateStatus() {
+	XHR.get('<%=url("admin/vpn/ipsec/get_status")%>', null, function(x, data) {
+		if (data) {
+			// Update status badge
+			var statusBadge = document.getElementById('vpn-status');
+			var statusText = document.getElementById('status-text');
+
+			if (data.running && data.connected) {
+				statusBadge.className = 'label label-success';
+				statusText.textContent = '<%:Connected%>';
+			} else if (data.running) {
+				statusBadge.className = 'label label-warning';
+				statusText.textContent = '<%:Connecting%>';
+			} else {
+				statusBadge.className = 'label label-danger';
+				statusText.textContent = '<%:Disconnected%>';
+			}
+
+			// Update stats
+			document.getElementById('traffic-in').textContent = formatBytes(data.traffic_in);
+			document.getElementById('traffic-out').textContent = formatBytes(data.traffic_out);
+			document.getElementById('local-ip').textContent = data.local_ip || 'N/A';
+			document.getElementById('remote-ip').textContent = data.remote_ip || 'N/A';
+			document.getElementById('local-subnet').textContent = data.local_subnet || 'N/A';
+			document.getElementById('remote-subnet').textContent = data.remote_subnet || 'N/A';
+		}
+	});
+}
+
+function formatBytes(bytes) {
+	if (bytes === 0) return '0 B';
+	var k = 1024;
+	var sizes = ['B', 'KB', 'MB', 'GB'];
+	var i = Math.floor(Math.log(bytes) / Math.log(k));
+	return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i];
+}
+
+function startService() {
+	showProgress('<%:Starting IPsec service...%>');
+	XHR.get('<%=url("admin/vpn/ipsec/action_start")%>', null, function(x, data) {
+		hideProgress();
+		if (data && data.success) {
+			showMessage('success', data.message);
+			setTimeout(updateStatus, 2000);
+		} else {
+			showMessage('error', data ? data.message : '<%:Failed to start service%>');
+		}
+	});
+}
+
+function stopService() {
+	showProgress('<%:Stopping IPsec service...%>');
+	XHR.get('<%=url("admin/vpn/ipsec/action_stop")%>', null, function(x, data) {
+		hideProgress();
+		if (data && data.success) {
+			showMessage('success', data.message);
+			setTimeout(updateStatus, 2000);
+		} else {
+			showMessage('error', data ? data.message : '<%:Failed to stop service%>');
+		}
+	});
+}
+
+function restartService() {
+	showProgress('<%:Restarting IPsec service...%>');
+	XHR.get('<%=url("admin/vpn/ipsec/action_restart")%>', null, function(x, data) {
+		hideProgress();
+		if (data && data.success) {
+			showMessage('success', data.message);
+			setTimeout(updateStatus, 3000);
+		} else {
+			showMessage('error', data ? data.message : '<%:Failed to restart service%>');
+		}
+	});
+}
+
+function showProgress(msg) {
+	var progressDiv = document.getElementById('progress-msg');
+	progressDiv.textContent = msg;
+	progressDiv.style.display = 'block';
+}
+
+function hideProgress() {
+	document.getElementById('progress-msg').style.display = 'none';
+}
+
+function showMessage(type, msg) {
+	var msgDiv = document.getElementById('message-area');
+	msgDiv.className = 'alert alert-' + (type === 'success' ? 'success' : 'danger');
+	msgDiv.textContent = msg;
+	msgDiv.style.display = 'block';
+	setTimeout(function() {
+		msgDiv.style.display = 'none';
+	}, 5000);
+}
+
+function updatePingStatus() {
+	XHR.get('<%=url("admin/vpn/ipsec/ping_status")%>', null, function(x, data) {
+		var pingSection = document.getElementById('ping-monitor-section');
+		var pingStatus = document.getElementById('ping-status');
+
+		if (data && data.enabled) {
+			pingSection.style.display = 'block';
+			var html = '<div class="table">';
+			html += '<div class="tr">';
+			html += '<div class="td left" style="width:30%"><strong><%:Status%>:</strong></div>';
+			html += '<div class="td left">' + (data.status === 'OK' ? '<span style="color:green;">●</span> <%:Healthy%>' : '<span style="color:red;">●</span> <%:Failed%>') + '</div>';
+			html += '</div>';
+			html += '<div class="tr">';
+			html += '<div class="td left"><strong><%:Local IP%>:</strong></div>';
+			html += '<div class="td left">' + data.local_ip + '</div>';
+			html += '</div>';
+			html += '<div class="tr">';
+			html += '<div class="td left"><strong><%:Primary Target%>:</strong></div>';
+			html += '<div class="td left">' + data.primary + '</div>';
+			html += '</div>';
+			if (data.secondary) {
+				html += '<div class="tr">';
+				html += '<div class="td left"><strong><%:Secondary Target%>:</strong></div>';
+				html += '<div class="td left">' + data.secondary + '</div>';
+				html += '</div>';
+			}
+			html += '<div class="tr">';
+			html += '<div class="td left"><strong><%:Last Check%>:</strong></div>';
+			html += '<div class="td left">' + data.last_check + '</div>';
+			html += '</div>';
+			html += '<div class="tr">';
+			html += '<div class="td left"><strong><%:Failure Count%>:</strong></div>';
+			html += '<div class="td left">' + data.failures + ' / ' + data.max_tries + '</div>';
+			html += '</div>';
+			html += '</div>';
+			pingStatus.innerHTML = html;
+		} else {
+			pingSection.style.display = 'none';
+		}
+	});
+}
+
+// Initialize
+window.onload = function() {
+	checkDependencies();
+	updateStatus();
+	updatePingStatus();
+	statusInterval = setInterval(updateStatus, 5000);
+	pingInterval = setInterval(updatePingStatus, 5000);
+};
+
+window.onunload = function() {
+	if (statusInterval) clearInterval(statusInterval);
+	if (pingInterval) clearInterval(pingInterval);
+};
+
+//]]></script>
+
+<h2 name="content"><%:IPsec VPN Overview%></h2>
+
+<!-- Dependency Warning Banner -->
+<div id="dependency-warning" style="display:none;padding:15px;margin-bottom:20px;border-left:4px solid #f0ad4e;background:#fcf8e3;">
+	<h4 style="margin:0 0 10px 0;color:#8a6d3b;">⚠️ <%:Missing Dependencies%></h4>
+	<p style="margin:5px 0;"><%:The following packages are required but not installed%>:</p>
+	<p><strong id="missing-pkg-list"></strong></p>
+
+	<p style="margin:10px 0 5px 0;"><%:Run this command via SSH to install%>:</p>
+	<pre id="install-cmd" style="background:#f5f5f5;padding:10px;margin:10px 0;border-radius:4px;overflow-x:auto;border:1px solid #ddd;"></pre>
+
+	<p style="margin:10px 0 5px 0;"><%:Or click the button to install automatically%>:</p>
+	<button type="button" class="cbi-button cbi-button-apply" id="install-btn" onclick="installDependencies();" style="margin-top:5px;">
+		<%:Install Missing Packages%>
+	</button>
+	<span id="install-progress" style="margin-left:10px;display:none;">
+		<%:Installing, please wait...%>
+	</span>
+
+	<div id="install-logs-container" style="display:none;margin-top:15px;">
+		<p><strong><%:Installation Log%>:</strong></p>
+		<pre id="install-logs" style="background:#333;color:#0f0;padding:10px;border-radius:4px;max-height:200px;overflow:auto;font-size:12px;border:1px solid #ddd;"></pre>
+	</div>
+</div>
+
+<div id="message-area" class="alert" style="display:none;"></div>
+<div id="progress-msg" class="alert alert-info" style="display:none;"></div>
+
+<fieldset class="cbi-section">
+	<legend><%:Connection Status%></legend>
+
+	<div class="cbi-section-node">
+		<div class="table">
+			<div class="tr">
+				<div class="td left" style="width:30%"><strong><%:Status%>:</strong></div>
+				<div class="td left">
+					<span id="vpn-status" class="label label-default">
+						<span id="status-text"><%:Checking...%></span>
+					</span>
+				</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong><%:Local IP%>:</strong></div>
+				<div class="td left" id="local-ip">-</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong><%:Local Subnet%>:</strong></div>
+				<div class="td left" id="local-subnet">-</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong><%:Remote Gateway%>:</strong></div>
+				<div class="td left" id="remote-ip">-</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong><%:Remote Subnet%>:</strong></div>
+				<div class="td left" id="remote-subnet">-</div>
+			</div>
+		</div>
+	</div>
+</fieldset>
+
+<fieldset class="cbi-section">
+	<legend><%:Traffic Statistics%></legend>
+
+	<div class="cbi-section-node">
+		<div class="table">
+			<div class="tr">
+				<div class="td left" style="width:30%"><strong><%:Data Received%>:</strong></div>
+				<div class="td left" id="traffic-in">0 B</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong><%:Data Sent%>:</strong></div>
+				<div class="td left" id="traffic-out">0 B</div>
+			</div>
+		</div>
+	</div>
+</fieldset>
+
+<fieldset class="cbi-section" id="ping-monitor-section" style="display:none;">
+	<legend><%:Ping Monitor Status%></legend>
+
+	<div class="cbi-section-node">
+		<div id="ping-status">
+			<p><%:Loading...%></p>
+		</div>
+	</div>
+</fieldset>
+
+<fieldset class="cbi-section">
+	<legend><%:Quick Actions%></legend>
+
+	<div class="cbi-section-node">
+		<input type="button" class="cbi-button cbi-button-apply" value="<%:Start%>" onclick="startService();" />
+		<input type="button" class="cbi-button cbi-button-reset" value="<%:Stop%>" onclick="stopService();" />
+		<input type="button" class="cbi-button cbi-button-reload" value="<%:Restart%>" onclick="restartService();" />
+	</div>
+</fieldset>
+
+<%+footer%>

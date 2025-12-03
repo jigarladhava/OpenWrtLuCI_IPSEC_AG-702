@@ -1,0 +1,163 @@
+<%+header%>
+
+<style type="text/css">
+/* Reduce excessive spacing in CBI forms */
+.cbi-value-field br + .cbi-value-description {
+	margin-top: 0;
+}
+.cbi-value-field {
+	padding-top: 0.3em;
+	padding-bottom: 0.3em;
+}
+.cbi-value-description {
+	margin-top: 0.2em;
+}
+</style>
+
+<script type="text/javascript" src="<%=resource%>/cbi.js"></script>
+<script type="text/javascript">//<![CDATA[
+
+var autoRefresh = null;
+
+function refreshLogs() {
+	var lines = document.getElementById('log-lines').value;
+	var filter = document.getElementById('log-filter').value;
+
+	XHR.get('<%=url("admin/vpn/ipsec/get_logs")%>',
+		{ lines: lines, filter: filter },
+		function(x, data) {
+			if (data && data.logs) {
+				var logArea = document.getElementById('log-output');
+				logArea.textContent = data.logs;
+				// Auto-scroll to bottom
+				logArea.scrollTop = logArea.scrollHeight;
+			}
+		}
+	);
+}
+
+function toggleAutoRefresh() {
+	var checkbox = document.getElementById('auto-refresh');
+	if (checkbox.checked) {
+		autoRefresh = setInterval(refreshLogs, 3000); // Refresh every 3 seconds
+	} else {
+		if (autoRefresh) {
+			clearInterval(autoRefresh);
+			autoRefresh = null;
+		}
+	}
+}
+
+function clearLogs() {
+	if (confirm('<%:This will clear all system logs. Continue?%>')) {
+		document.getElementById('log-output').textContent = '<%:Logs cleared (system logread buffer not modified)%>';
+	}
+}
+
+function downloadLogs() {
+	var logs = document.getElementById('log-output').textContent;
+	var blob = new Blob([logs], { type: 'text/plain' });
+	var url = window.URL.createObjectURL(blob);
+	var a = document.createElement('a');
+	a.href = url;
+	a.download = 'ipsec-logs-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.txt';
+	document.body.appendChild(a);
+	a.click();
+	document.body.removeChild(a);
+	window.URL.revokeObjectURL(url);
+}
+
+// Initialize
+window.onload = function() {
+	refreshLogs();
+};
+
+window.onunload = function() {
+	if (autoRefresh) clearInterval(autoRefresh);
+};
+
+//]]></script>
+
+<h2 name="content"><%:IPsec VPN Logs%></h2>
+
+<fieldset class="cbi-section">
+	<legend><%:Log Viewer%></legend>
+
+	<div class="cbi-section-node">
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:Lines to Display%>:</label>
+			<div class="cbi-value-field">
+				<select id="log-lines" onchange="refreshLogs();">
+					<option value="50">50</option>
+					<option value="100" selected>100</option>
+					<option value="200">200</option>
+					<option value="500">500</option>
+				</select>
+			</div>
+		</div>
+
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:Filter%>:</label>
+			<div class="cbi-value-field">
+				<select id="log-filter" onchange="refreshLogs();">
+					<option value="pluto" selected>Pluto (IPsec)</option>
+					<option value="ipsec">IPsec</option>
+					<option value="ipsec-route">Route Management</option>
+					<option value="firewall">Firewall</option>
+					<option value="">All Logs</option>
+				</select>
+			</div>
+		</div>
+
+		<div class="cbi-value">
+			<label class="cbi-value-title"><%:Auto-refresh%>:</label>
+			<div class="cbi-value-field">
+				<input type="checkbox" id="auto-refresh" onchange="toggleAutoRefresh();" />
+				<span style="margin-left:5px;"><%:Update every 3 seconds%></span>
+			</div>
+		</div>
+
+		<div class="cbi-value">
+			<div class="cbi-value-field">
+				<input type="button" class="cbi-button cbi-button-reload" value="<%:Refresh%>" onclick="refreshLogs();" />
+				<input type="button" class="cbi-button cbi-button-apply" value="<%:Download Logs%>" onclick="downloadLogs();" />
+				<input type="button" class="cbi-button cbi-button-reset" value="<%:Clear Display%>" onclick="clearLogs();" />
+			</div>
+		</div>
+
+		<div style="margin-top:15px;">
+			<pre id="log-output" style="background:#000;color:#0f0;padding:10px;border:1px solid #333;overflow:auto;max-height:500px;font-family:monospace;font-size:12px;"><%:Loading logs...%></pre>
+		</div>
+	</div>
+</fieldset>
+
+<fieldset class="cbi-section">
+	<legend><%:Log Interpretation Guide%></legend>
+
+	<div class="cbi-section-node">
+		<div class="table">
+			<div class="tr">
+				<div class="td left" style="width:40%"><strong>"IKE SA established"</strong></div>
+				<div class="td left">Phase 1 negotiation successful</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong>"IPsec SA established"</strong></div>
+				<div class="td left">Phase 2 negotiation successful, VPN is up</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong>"no acceptable proposal"</strong></div>
+				<div class="td left">Encryption/hash mismatch between endpoints</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong>"authentication failed"</strong></div>
+				<div class="td left">PSK mismatch or incorrect credentials</div>
+			</div>
+			<div class="tr">
+				<div class="td left"><strong>"connection terminated"</strong></div>
+				<div class="td left">VPN disconnected (check DPD or network)</div>
+			</div>
+		</div>
+	</div>
+</fieldset>
+
+<%+footer%>
