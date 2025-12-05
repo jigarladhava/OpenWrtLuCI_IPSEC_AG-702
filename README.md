@@ -1,4 +1,6 @@
 # LuCI IPsec VPN Application for OpenWrt
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjigarladhava%2FOpenWrtLuCI_IPSEC_AG-702.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjigarladhava%2FOpenWrtLuCI_IPSEC_AG-702?ref=badge_shield)
+
 
 A LuCI web interface application for configuring IPsec site-to-site VPN connections using Libreswan on OpenWrt routers.
 
@@ -208,6 +210,9 @@ ping <ip_in_remote_subnet>      # Should get replies
 ## License
 
 MIT License
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjigarladhava%2FOpenWrtLuCI_IPSEC_AG-702.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjigarladhava%2FOpenWrtLuCI_IPSEC_AG-702?ref=badge_large)
 
 ## Contributing
 
